@@ -158,8 +158,24 @@
 
 <script>
 const SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS6OqcW-muejMga7tINK5n33jCmu3Ve-6BM5B1DDONmVMohAayNtFsTF1P8xVJeHdTYJdl1e2Db3wRG/pub?gid=1213769268&single=true&output=csv';
-// Proxy CORS untuk buka dari file lokal maupun web
-const SHEET_URL = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(SHEET_CSV);
+
+// Coba langsung dulu (works di GitHub Pages), fallback ke proxy jika CORS error
+async function fetchCSV() {
+  // 1. Coba langsung (GitHub Pages tidak ada CORS issue)
+  try {
+    const r = await fetch(SHEET_CSV + '&t=' + Date.now());
+    if (r.ok) return await r.text();
+  } catch(e) {}
+  // 2. Fallback proxy 1
+  try {
+    const r = await fetch('https://corsproxy.io/?' + encodeURIComponent(SHEET_CSV));
+    if (r.ok) return await r.text();
+  } catch(e) {}
+  // 3. Fallback proxy 2
+  const r = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(SHEET_CSV) + '&t=' + Date.now());
+  if (!r.ok) throw new Error('HTTP ' + r.status + ' — semua proxy gagal.');
+  return await r.text();
+}
 
 const PROG_COLORS = {1:'#3b82f6',2:'#22c55e',3:'#a855f7',4:'#f59e0b',5:'#ef4444',6:'#06b6d4',7:'#a16207',8:'#64748b',9:'#ec4899',10:'#10b981'};
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -209,9 +225,7 @@ async function loadData(){
   document.getElementById('main').style.display='none';
 
   try {
-    const res=await fetch(SHEET_URL+'&t='+Date.now());
-    if(!res.ok) throw new Error('HTTP '+res.status+' — gagal mengambil data dari proxy.');
-    const text=await res.text();
+    const text = await fetchCSV();
     if(!text || text.trim().length === 0) throw new Error('Data kosong dari Google Sheets.');
     const rows=parseCSV(text);
     const tasks=rows.map(r=>({
