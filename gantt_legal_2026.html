@@ -63,9 +63,9 @@
 
   .gantt-table th.fix, .gantt-table td.fix { position:sticky; z-index:10; background:var(--surface); }
   .gantt-table th.fix0,.gantt-table td.fix0 { left:0;    width:36px;  min-width:36px; }
-  .gantt-table th.fix1,.gantt-table td.fix1 { left:36px; width:240px; min-width:240px; }
-  .gantt-table th.fix2,.gantt-table td.fix2 { left:276px;width:280px; min-width:280px; }
-  .gantt-table th.fix3,.gantt-table td.fix3 { left:556px;width:64px;  min-width:64px; box-shadow:4px 0 12px rgba(0,0,0,.08); }
+  .gantt-table th.fix1,.gantt-table td.fix1 { left:36px; width:220px; min-width:220px; }
+  .gantt-table th.fix2,.gantt-table td.fix2 { left:256px;width:280px; min-width:280px; }
+  .gantt-table th.fix3,.gantt-table td.fix3 { left:536px;width:64px;  min-width:64px; box-shadow:4px 0 12px rgba(0,0,0,.08); }
 
   .col-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); padding:0 10px; border-right:1px solid var(--border); border-bottom:2px solid var(--border); white-space:nowrap; background:#f8fafc; }
   .week-th { height:38px; font-family:'DM Mono',monospace; font-size:9px; color:#8899b8; text-align:center; border-right:1px solid var(--border); border-bottom:1px solid var(--border); white-space:nowrap; padding:0 2px; background:#f8fafc; }
@@ -76,11 +76,13 @@
   .gantt-row.hidden { display:none; }
 
   td.num-cell  { text-align:center; font-family:'DM Mono',monospace; font-size:11px; font-weight:700; border-right:1px solid var(--border); }
-  td.prog-cell { padding:0 10px; font-size:11px; font-weight:600; border-right:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px; }
+  td.prog-cell { padding:6px 10px; font-size:11px; font-weight:600; border-right:1px solid var(--border); white-space:normal; word-break:break-word; max-width:220px; vertical-align:middle; text-align:center; line-height:1.4; }
   td.step-cell { padding:0 10px; font-size:11px; color:#4a5a78; border-right:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:280px; }
   td.pic-cell  { text-align:center; font-size:10px; font-weight:600; font-family:'DM Mono',monospace; border-right:1px solid var(--border); color:var(--muted); }
   td.tl-cell   { width:28px; min-width:28px; padding:4px 2px; border-right:1px solid #e8edf5; text-align:center; vertical-align:middle; }
   td.tl-cell.today-col { border-right:2px solid var(--today)!important; background:rgba(224,91,0,.05)!important; }
+  td.prog-cell.grouped { border-bottom:none; }
+  td.prog-cell.group-last { border-bottom:2px solid var(--border); }
 
   .bar { height:20px; border-radius:4px; display:block; width:100%; position:relative; overflow:hidden; }
   .bar::after { content:''; position:absolute; top:0; left:0; right:0; height:40%; background:rgba(255,255,255,.3); border-radius:4px 4px 0 0; }
@@ -336,18 +338,37 @@ function buildGantt(tasks){
 
   const tip=document.getElementById('tooltip');
 
-  tasks.forEach(({no,program,tahapan,pic,start,end})=>{
+  // Group tasks by program number for rowspan
+  const progGroups={};
+  tasks.forEach((t,i)=>{
+    if(!progGroups[t.no]) progGroups[t.no]=[];
+    progGroups[t.no].push(i);
+  });
+
+  tasks.forEach(({no,program,tahapan,pic,start,end},idx)=>{
     const color=PROG_COLORS[no]||'#888';
     const row=tbody.insertRow();
     row.className=`gantt-row prog-${no}`; row.dataset.prog=no;
 
-    const n=row.insertCell(); n.className='fix fix0 num-cell';
-    n.style.cssText=`color:${color};border-right:1px solid var(--border);background:var(--surface);`;
-    n.textContent=no;
+    const group=progGroups[no];
+    const isFirst=group[0]===idx;
+    const isLast=group[group.length-1]===idx;
 
-    const p=row.insertCell(); p.className='fix fix1 prog-cell';
-    p.style.cssText=`color:${color};background:var(--surface);`;
-    p.title=program; p.textContent=program;
+    // No. cell — only render on first row of group, with rowspan
+    if(isFirst){
+      const n=row.insertCell(); n.className='fix fix0 num-cell';
+      n.style.cssText=`color:${color};border-right:1px solid var(--border);background:var(--surface);border-bottom:${isLast?'1px solid #e8edf5':'none'};`;
+      n.textContent=no;
+      n.rowSpan=group.length;
+    }
+
+    // Program cell — only render on first row of group, with rowspan
+    if(isFirst){
+      const p=row.insertCell(); p.className='fix fix1 prog-cell';
+      p.style.cssText=`color:${color};background:var(--surface);border-left:3px solid ${color};border-bottom:2px solid ${color}22;`;
+      p.title=program; p.textContent=program;
+      p.rowSpan=group.length;
+    }
 
     const s=row.insertCell(); s.className='fix fix2 step-cell';
     s.style.background='var(--surface)'; s.title=tahapan; s.textContent=tahapan;
