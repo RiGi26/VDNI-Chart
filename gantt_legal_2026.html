@@ -330,7 +330,7 @@ function buildGantt(tasks){
   weeks.forEach(w=>{
     const th=document.createElement('th');
     th.className='week-th'+(w<=TODAY&&TODAY<addDays(w,7)?' today-col':'');
-    th.innerHTML=`W${isoWeek(w)}<br><span style="font-size:8px;opacity:.7">${w.getDate()}/${w.getMonth()+1}</span>`;
+    th.innerHTML=`W${isoWeek(w)}`;
     wRow.appendChild(th);
   });
 
