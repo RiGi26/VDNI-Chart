@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gantt Chart – Legal Internal 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#f0f4f8; --surface:#ffffff; --surface2:#eef2f7;
+    --border:#d1dae8; --text:#1e2a3a; --muted:#6b7a9e; --today:#e05b00;
+  }
+  body { font-family:'DM Sans',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+  /* Loading */
+  #loading { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:16px; }
+  .spinner { width:40px; height:40px; border:3px solid var(--border); border-top-color:#2563eb; border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  #loading p { font-size:13px; color:var(--muted); font-family:'DM Mono',monospace; }
+
+  /* Error */
+  #error-box { display:none; flex-direction:column; align-items:center; justify-content:center; height:100vh; gap:12px; padding:32px; text-align:center; }
+  #error-box h2 { color:#dc2626; font-size:16px; }
+  #error-box p  { color:var(--muted); font-size:12px; max-width:500px; line-height:1.6; white-space:pre-wrap; }
+  .retry-btn { margin-top:8px; padding:8px 20px; border-radius:8px; border:1px solid #2563eb; background:rgba(37,99,235,.08); color:#2563eb; font-size:12px; font-weight:600; cursor:pointer; font-family:'DM Sans',sans-serif; }
+
+  /* Header */
+  .header {
+    background:linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 50%,#2563eb 100%);
+    border-bottom:1px solid #1d4ed8; padding:16px 28px 14px;
+    position:sticky; top:0; z-index:100;
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    box-shadow: 0 2px 12px rgba(37,99,235,.25);
+  }
+  .header-title { flex:1; min-width:200px; }
+  .header-title h1 { font-size:14px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#fff; }
+  .header-title p  { font-size:10px; color:rgba(255,255,255,.65); margin-top:2px; font-family:'DM Mono',monospace; }
+  .filters { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .filter-btn {
+    padding:4px 11px; border-radius:20px; font-size:11px; font-weight:600;
+    border:1.5px solid rgba(255,255,255,.3); background:rgba(255,255,255,.12);
+    color:rgba(255,255,255,.75); cursor:pointer; transition:all .2s; font-family:'DM Sans',sans-serif;
+  }
+  .filter-btn.all.active { border-color:#fff; background:rgba(255,255,255,.25); color:#fff!important; }
+  .today-badge {
+    font-family:'DM Mono',monospace; font-size:10px; padding:4px 10px; border-radius:6px;
+    background:rgba(255,237,213,.2); color:#fed7aa; border:1px solid rgba(255,237,213,.35);
+  }
+  .refresh-btn {
+    font-family:'DM Sans',sans-serif; font-size:10px; font-weight:600; padding:4px 10px;
+    border-radius:6px; cursor:pointer; background:rgba(255,255,255,.15); color:#fff;
+    border:1px solid rgba(255,255,255,.3); transition:all .2s;
+  }
+  .refresh-btn:hover { background:rgba(255,255,255,.25); }
+
+  /* Gantt */
+  .gantt-wrapper { overflow-x:auto; overflow-y:auto; max-height:calc(100vh - 86px); padding-bottom:48px; }
+  .gantt-wrapper::-webkit-scrollbar { height:6px; width:6px; }
+  .gantt-wrapper::-webkit-scrollbar-track { background:var(--bg); }
+  .gantt-wrapper::-webkit-scrollbar-thumb { background:#c5cfde; border-radius:3px; }
+  .gantt-table { border-collapse:collapse; min-width:max-content; }
+
+  .gantt-table th.fix, .gantt-table td.fix { position:sticky; z-index:10; background:var(--surface); }
+  .gantt-table th.fix0,.gantt-table td.fix0 { left:0;    width:36px;  min-width:36px; }
+  .gantt-table th.fix1,.gantt-table td.fix1 { left:36px; width:240px; min-width:240px; }
+  .gantt-table th.fix2,.gantt-table td.fix2 { left:276px;width:280px; min-width:280px; }
+  .gantt-table th.fix3,.gantt-table td.fix3 { left:556px;width:64px;  min-width:64px; box-shadow:4px 0 12px rgba(0,0,0,.08); }
+
+  .col-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); padding:0 10px; border-right:1px solid var(--border); border-bottom:2px solid var(--border); white-space:nowrap; background:#f8fafc; }
+  .week-th { height:38px; font-family:'DM Mono',monospace; font-size:9px; color:#8899b8; text-align:center; border-right:1px solid var(--border); border-bottom:1px solid var(--border); white-space:nowrap; padding:0 2px; background:#f8fafc; }
+  .week-th.today-col { color:var(--today)!important; font-weight:700; }
+
+  .gantt-row td { height:34px; border-bottom:1px solid #e8edf5; vertical-align:middle; }
+  .gantt-row:hover td { background:#f0f6ff!important; }
+  .gantt-row.hidden { display:none; }
+
+  td.num-cell  { text-align:center; font-family:'DM Mono',monospace; font-size:11px; font-weight:700; border-right:1px solid var(--border); }
+  td.prog-cell { padding:0 10px; font-size:11px; font-weight:600; border-right:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px; }
+  td.step-cell { padding:0 10px; font-size:11px; color:#4a5a78; border-right:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:280px; }
+  td.pic-cell  { text-align:center; font-size:10px; font-weight:600; font-family:'DM Mono',monospace; border-right:1px solid var(--border); color:var(--muted); }
+  td.tl-cell   { width:28px; min-width:28px; padding:4px 2px; border-right:1px solid #e8edf5; text-align:center; vertical-align:middle; }
+  td.tl-cell.today-col { border-right:2px solid var(--today)!important; background:rgba(224,91,0,.05)!important; }
+
+  .bar { height:20px; border-radius:4px; display:block; width:100%; position:relative; overflow:hidden; }
+  .bar::after { content:''; position:absolute; top:0; left:0; right:0; height:40%; background:rgba(255,255,255,.3); border-radius:4px 4px 0 0; }
+  .bar-active { animation:pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:.9} 50%{opacity:1} }
+
+  .m0{background:#bfdbfe}.m1{background:#bbf7d0}.m2{background:#e9d5ff}
+  .m3{background:#fde68a}.m4{background:#fecaca}.m5{background:#a5f3fc}
+  .m6{background:#fed7aa}.m7{background:#bae6fd}.m8{background:#fbcfe8}
+  .m9{background:#a7f3d0}.m10{background:#ddd6fe}.m11{background:#bfdbfe}
+
+  /* override month header text to be dark since bg is light */
+  .gantt-table thead tr:first-child th:not(.fix) { color:#1e2a3a!important; }
+
+  /* Tooltip */
+  .tooltip {
+    position:fixed; z-index:999; pointer-events:none;
+    background:#fff; border:1px solid var(--border);
+    border-radius:10px; padding:12px 14px; min-width:220px;
+    box-shadow:0 8px 32px rgba(30,42,58,.15); font-size:11px; line-height:1.6;
+    opacity:0; transform:translateY(6px); transition:opacity .15s,transform .15s;
+  }
+  .tooltip.visible { opacity:1; transform:translateY(0); }
+  .tooltip-prog { font-weight:700; font-size:12px; margin-bottom:6px; }
+  .tooltip-row  { color:var(--muted); }
+  .tooltip-row span { color:var(--text); font-weight:500; }
+  .tooltip-status { display:inline-block; margin-top:6px; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
+  .status-done     { background:rgba(22,163,74,.12); color:#15803d; }
+  .status-active   { background:rgba(224,91,0,.12); color:var(--today); }
+  .status-upcoming { background:rgba(107,122,158,.12); color:var(--muted); }
+
+  /* Legend */
+  .legend { display:flex; gap:16px; align-items:center; padding:10px 28px; border-top:1px solid var(--border); background:var(--surface); flex-wrap:wrap; position:sticky; bottom:0; box-shadow:0 -2px 8px rgba(0,0,0,.06); }
+  .legend-item { display:flex; align-items:center; gap:6px; font-size:10px; color:var(--muted); }
+  .legend-box { width:20px; height:10px; border-radius:3px; }
+  .last-update { margin-left:auto; font-family:'DM Mono',monospace; font-size:10px; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <p>Mengambil data dari Google Sheets...</p>
+</div>
+
+<div id="error-box">
+  <h2>⚠ Gagal memuat data</h2>
+  <p id="error-msg">Tidak dapat mengambil data dari Google Sheets.</p>
+  <button class="retry-btn" onclick="loadData()">↺ Coba Lagi</button>
+</div>
+
+<div id="main" style="display:none">
+  <div class="header">
+    <div class="header-title">
+      <h1>Internal — Program Kerja Legal 2026</h1>
+      <p id="subtitle">Memuat...</p>
+    </div>
+    <div class="filters" id="filters"></div>
+    <div class="today-badge" id="todayBadge"></div>
+    <button class="refresh-btn" onclick="loadData()">↺ Refresh</button>
+  </div>
+  <div class="gantt-wrapper" id="ganttWrapper">
+    <table class="gantt-table" id="ganttTable"></table>
+  </div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-box" style="background:#3b82f6;opacity:.85"></div>Selesai</div>
+    <div class="legend-item"><div class="legend-box" style="background:#f97316"></div>Sedang Berjalan</div>
+    <div class="legend-item"><div class="legend-box" style="background:#3b82f6;opacity:.35"></div>Akan Datang</div>
+    <div class="legend-item"><div class="legend-box" style="background:rgba(249,115,22,.3);border:1px solid #f97316"></div>Kolom Hari Ini</div>
+    <div class="last-update" id="lastUpdate"></div>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS6OqcW-muejMga7tINK5n33jCmu3Ve-6BM5B1DDONmVMohAayNtFsTF1P8xVJeHdTYJdl1e2Db3wRG/pub?gid=1213769268&single=true&output=csv';
+// Proxy CORS untuk buka dari file lokal maupun web
+const SHEET_URL = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(SHEET_CSV);
+
+const PROG_COLORS = {1:'#3b82f6',2:'#22c55e',3:'#a855f7',4:'#f59e0b',5:'#ef4444',6:'#06b6d4',7:'#a16207',8:'#64748b',9:'#ec4899',10:'#10b981'};
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_CLS = ['m0','m1','m2','m3','m4','m5','m6','m7','m8','m9','m10','m11'];
+
+const TODAY = new Date(); TODAY.setHours(0,0,0,0);
+
+function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+
+function parseDate(s){
+  if(!s) return null;
+  s = s.trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)){ const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
+  if(/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)){ const [d,m,y]=s.split('/').map(Number); return new Date(y,m-1,d); }
+  const p=new Date(s); return isNaN(p)?null:p;
+}
+
+function isoWeek(d){
+  const t=new Date(d); t.setHours(0,0,0,0);
+  t.setDate(t.getDate()+3-((t.getDay()||7)-1+1));
+  const w1=new Date(t.getFullYear(),0,4);
+  return 1+Math.round(((t-w1)/86400000-3+(w1.getDay()||7))/7);
+}
+
+function parseCSV(text){
+  // Handle Windows \r\n and Mac \r line endings from Google Sheets
+  const lines=text.trim().replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  const headers=lines[0].split(',').map(h=>h.trim().replace(/"/g,'').toLowerCase().replace(/\s+/g,'_'));
+  return lines.slice(1).map(line=>{
+    const vals=[]; let cur='', inQ=false;
+    for(let i=0;i<line.length;i++){
+      const ch=line[i];
+      if(ch==='"') inQ=!inQ;
+      else if(ch===','&&!inQ){ vals.push(cur.trim()); cur=''; }
+      else cur+=ch;
+    }
+    vals.push(cur.trim());
+    const obj={};
+    headers.forEach((h,i)=>obj[h]=(vals[i]||'').replace(/"/g,''));
+    return obj;
+  }).filter(r=>r.no_program&&r.start_date&&r.end_date);
+}
+
+async function loadData(){
+  document.getElementById('loading').style.display='flex';
+  document.getElementById('error-box').style.display='none';
+  document.getElementById('main').style.display='none';
+
+  try {
+    const res=await fetch(SHEET_URL+'&t='+Date.now());
+    if(!res.ok) throw new Error('HTTP '+res.status+' — gagal mengambil data dari proxy.');
+    const text=await res.text();
+    if(!text || text.trim().length === 0) throw new Error('Data kosong dari Google Sheets.');
+    const rows=parseCSV(text);
+    const tasks=rows.map(r=>({
+      no:      parseInt(r.no_program)||0,
+      program: (r.program||r.program_2||'').trim(),
+      tahapan: (r.tahapan_kegiatan||'').trim(),
+      pic:     (r.pic||'').trim(),
+      start:   parseDate(r.start_date),
+      end:     parseDate(r.end_date),
+    })).filter(t=>t.no>0&&t.start&&t.end);
+
+    if(!tasks.length) {
+      // Show first few headers to help debug column name mismatch
+      const rows2=parseCSV(text);
+      const sample=rows2.length>0?'Kolom terdeteksi: '+Object.keys(rows2[0]).join(', '):'Sheet sepertinya kosong.';
+      throw new Error('Data tidak bisa dibaca. '+sample+'\n\nPastikan header kolom: no_program, program, tahapan_kegiatan, pic, start_date, end_date');
+    }
+    buildGantt(tasks);
+    document.getElementById('loading').style.display='none';
+    document.getElementById('main').style.display='block';
+    document.getElementById('lastUpdate').textContent='Diperbarui: '+new Date().toLocaleString('id-ID');
+  } catch(err){
+    document.getElementById('loading').style.display='none';
+    document.getElementById('error-box').style.display='flex';
+    document.getElementById('error-msg').textContent=err.message;
+  }
+}
+
+function buildGantt(tasks){
+  // Timeline range from data
+  const minDate=new Date(Math.min(...tasks.map(t=>t.start)));
+  const maxDate=new Date(Math.max(...tasks.map(t=>t.end)));
+  minDate.setDate(minDate.getDate()-((minDate.getDay()+6)%7));
+  maxDate.setDate(maxDate.getDate()+14);
+
+  const weeks=[];
+  let wd=new Date(minDate);
+  while(wd<=maxDate){ weeks.push(new Date(wd)); wd=addDays(wd,7); }
+
+  const progNos=[...new Set(tasks.map(t=>t.no))].sort((a,b)=>a-b);
+
+  // Subtitle
+  document.getElementById('subtitle').textContent=
+    `${tasks.length} kegiatan · ${progNos.length} program · `+
+    `${MONTHS[minDate.getMonth()]} ${minDate.getFullYear()} – ${MONTHS[maxDate.getMonth()]} ${maxDate.getFullYear()}`;
+
+  // Today badge
+  document.getElementById('todayBadge').textContent=
+    `Hari ini: ${TODAY.getDate()} ${MONTHS[TODAY.getMonth()]} ${TODAY.getFullYear()}`;
+
+  // Filter buttons
+  const filtersEl=document.getElementById('filters');
+  filtersEl.innerHTML='';
+  const allBtn=document.createElement('button');
+  allBtn.className='filter-btn all active'; allBtn.textContent='Semua';
+  allBtn.onclick=()=>setFilter(0);
+  filtersEl.appendChild(allBtn);
+
+  // dynamic color styles
+  let st=document.getElementById('dyn-st');
+  if(!st){st=document.createElement('style');st.id='dyn-st';document.head.appendChild(st);}
+  st.textContent=progNos.map(p=>{const c=PROG_COLORS[p]||'#888';
+    return `.filter-btn.b${p}{}.filter-btn.b${p}.active{color:${c}!important;border-color:${c}!important;background:${c}22!important}`;
+  }).join('');
+
+  progNos.forEach(p=>{
+    const btn=document.createElement('button');
+    btn.className=`filter-btn b${p}`; btn.textContent=p;
+    btn.title=tasks.find(t=>t.no===p)?.program||'';
+    btn.onclick=()=>setFilter(p);
+    filtersEl.appendChild(btn);
+  });
+
+  // Build table
+  const table=document.getElementById('ganttTable');
+  table.innerHTML='';
+  const thead=table.createTHead(), tbody=table.createTBody();
+
+  // Month groups
+  const mGroups={};
+  weeks.forEach((w,i)=>{
+    const k=`${w.getFullYear()}-${w.getMonth()}`;
+    if(!mGroups[k]) mGroups[k]={label:`${MONTHS[w.getMonth()]} ${w.getFullYear()}`,cols:[],mo:w.getMonth()};
+    mGroups[k].cols.push(i);
+  });
+
+  const mRow=thead.insertRow();
+  ['',' Program','Tahapan Kegiatan','PIC'].forEach((l,i)=>{
+    const th=document.createElement('th');
+    th.className=`fix fix${i} col-label`; th.rowSpan=2; th.textContent=l;
+    mRow.appendChild(th);
+  });
+  Object.values(mGroups).forEach(g=>{
+    const th=document.createElement('th');
+    th.colSpan=g.cols.length; th.textContent=g.label;
+    th.className=MONTH_CLS[g.mo]||'m0';
+    th.style.cssText='font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;text-align:center;color:#fff;border-right:1px solid rgba(255,255,255,.08);';
+    mRow.appendChild(th);
+  });
+
+  const wRow=thead.insertRow();
+  weeks.forEach(w=>{
+    const th=document.createElement('th');
+    th.className='week-th'+(w<=TODAY&&TODAY<addDays(w,7)?' today-col':'');
+    th.innerHTML=`W${isoWeek(w)}<br><span style="font-size:8px;opacity:.7">${w.getDate()}/${w.getMonth()+1}</span>`;
+    wRow.appendChild(th);
+  });
+
+  const tip=document.getElementById('tooltip');
+
+  tasks.forEach(({no,program,tahapan,pic,start,end})=>{
+    const color=PROG_COLORS[no]||'#888';
+    const row=tbody.insertRow();
+    row.className=`gantt-row prog-${no}`; row.dataset.prog=no;
+
+    const n=row.insertCell(); n.className='fix fix0 num-cell';
+    n.style.cssText=`color:${color};border-right:1px solid var(--border);background:var(--surface);`;
+    n.textContent=no;
+
+    const p=row.insertCell(); p.className='fix fix1 prog-cell';
+    p.style.cssText=`color:${color};background:var(--surface);`;
+    p.title=program; p.textContent=program;
+
+    const s=row.insertCell(); s.className='fix fix2 step-cell';
+    s.style.background='var(--surface)'; s.title=tahapan; s.textContent=tahapan;
+
+    const pc=row.insertCell(); pc.className='fix fix3 pic-cell';
+    pc.style.background='var(--surface)'; pc.textContent=pic;
+
+    weeks.forEach(w=>{
+      const td=row.insertCell(); td.className='tl-cell';
+      if(w<=TODAY&&TODAY<addDays(w,7)) td.classList.add('today-col');
+      if(start<=addDays(w,6)&&end>=w){
+        const done=end<TODAY, active=start<=TODAY&&TODAY<=end;
+        const bar=document.createElement('div');
+        bar.className='bar '+(done?'bar-done':active?'bar-active':'bar-upcoming');
+        bar.style.background=color;
+        if(!done&&!active) bar.style.opacity='.38';
+        td.appendChild(bar);
+        td.style.cursor='pointer';
+        const fmt=d=>`${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+        td.addEventListener('mouseenter',ev=>{
+          const st=done?'<span class="tooltip-status status-done">✓ Selesai</span>':
+                   active?'<span class="tooltip-status status-active">► Sedang Berjalan</span>':
+                   '<span class="tooltip-status status-upcoming">◌ Akan Datang</span>';
+          tip.innerHTML=`<div class="tooltip-prog" style="color:${color}">${program}</div>
+            <div class="tooltip-row">Tahapan: <span>${tahapan}</span></div>
+            <div class="tooltip-row">PIC: <span>${pic}</span></div>
+            <div class="tooltip-row">Mulai: <span>${fmt(start)}</span></div>
+            <div class="tooltip-row">Selesai: <span>${fmt(end)}</span></div>${st}`;
+          tip.style.left=Math.min(ev.clientX+14,window.innerWidth-240)+'px';
+          tip.style.top=(ev.clientY-10)+'px';
+          tip.classList.add('visible');
+        });
+        td.addEventListener('mouseleave',()=>tip.classList.remove('visible'));
+      }
+    });
+  });
+
+  // Scroll to today
+  setTimeout(()=>{
+    const cells=document.querySelectorAll('.today-col');
+    if(cells.length){
+      const wrap=document.getElementById('ganttWrapper');
+      wrap.scrollLeft+=cells[cells.length-1].getBoundingClientRect().left
+                      -wrap.getBoundingClientRect().left-420;
+    }
+  },150);
+}
+
+function setFilter(p){
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelector(p===0?'.filter-btn.all':`.filter-btn.b${p}`)?.classList.add('active');
+  document.querySelectorAll('.gantt-row').forEach(r=>{
+    r.classList.toggle('hidden',p!==0&&parseInt(r.dataset.prog)!==p);
+  });
+}
+
+loadData();
+</script>
+</body>
+</html>
